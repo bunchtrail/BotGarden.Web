@@ -1,0 +1,6 @@
+@BotGarden.Web_HostAddress = http://localhost:5090
+
+GET {{BotGarden.Web_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

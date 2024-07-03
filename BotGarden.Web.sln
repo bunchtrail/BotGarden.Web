@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34728.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGarden.Web", "BotGarden.Web.csproj", "{60C90726-D258-4BB2-965C-DFF4DA47F1D2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{60C90726-D258-4BB2-965C-DFF4DA47F1D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{60C90726-D258-4BB2-965C-DFF4DA47F1D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{60C90726-D258-4BB2-965C-DFF4DA47F1D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{60C90726-D258-4BB2-965C-DFF4DA47F1D2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1D2F4AAB-43F8-460D-9AC0-6A00E4B94316}
+	EndGlobalSection
+EndGlobal
