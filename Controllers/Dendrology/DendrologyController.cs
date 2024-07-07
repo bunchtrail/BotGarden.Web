@@ -3,10 +3,16 @@ using BotGarden.Application.Services.MainFormAdd;
 using BotGarden.Infrastructure.Contexts;
 using BotGarden.Domain.Models;
 using BotGarden.Domain.Models.Forms.Dendrology;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using System;
 
 namespace BotGarden.Web.Controllers.Dendrology
 {
-    public class DendrologyController : Controller
+    [Route("api/dendrology")]
+    [ApiController]
+    public class DendrologyController : ControllerBase
     {
         private readonly PlantFamilyService _plantFamilyService;
         private readonly BotGardenService _botGardenService;
@@ -21,6 +27,7 @@ namespace BotGarden.Web.Controllers.Dendrology
             _context = context;
         }
 
+        [HttpGet("index")]
         public async Task<IActionResult> Index()
         {
             var plantFamilies = await _plantFamilyService.GetAllPlantFamiliesAsync();
@@ -32,12 +39,14 @@ namespace BotGarden.Web.Controllers.Dendrology
                 BotGardens = botGardens,
                 Genuses = genuses
             };
-            return View(viewModel);
+            return Ok(viewModel);
         }
 
-        [HttpPost("api/Dendrology/Plants/Add")]
+        [HttpPost("plants/add")]
         public async Task<IActionResult> AddPlant([FromForm] Plants model, [FromForm] string latitude, [FromForm] string longitude)
         {
+            Console.WriteLine($"AddPlant method called with latitude: {latitude} and longitude: {longitude}");
+
             try
             {
                 // Замена запятой на точку перед конвертацией строки в double
@@ -45,22 +54,20 @@ namespace BotGarden.Web.Controllers.Dendrology
                 longitude = longitude.Replace(',', '.');
 
                 // Преобразуем строки в double
-                if (!double.TryParse(latitude, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedLatitude))
+                if (!double.TryParse(latitude, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedLatitude))
                 {
-                    return Json(new { success = false, message = "Invalid latitude value", receivedValue = latitude });
+                    return Ok(new { success = false, message = "Invalid latitude value", receivedValue = latitude });
                 }
 
-                if (!double.TryParse(longitude, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedLongitude))
+                if (!double.TryParse(longitude, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedLongitude))
                 {
-                    return Json(new { success = false, message = "Invalid longitude value", receivedValue = longitude });
+                    return Ok(new { success = false, message = "Invalid longitude value", receivedValue = longitude });
                 }
-
-
 
                 // Устанавливаем значения широты и долготы в модель вручную перед проверкой модели
                 model.Latitude = parsedLatitude;
                 model.Longitude = parsedLongitude;
-                Console.WriteLine("Model: " + model.Latitude);
+                Console.WriteLine($"Model: Latitude = {model.Latitude}, Longitude = {model.Longitude}");
 
                 // Удаляем ошибки валидации для полей Latitude и Longitude из ModelState
                 ModelState.Remove(nameof(model.Latitude));
@@ -78,7 +85,7 @@ namespace BotGarden.Web.Controllers.Dendrology
                         })
                         .ToList();
 
-                    return Json(new { success = false, message = "Model state is invalid", errors = detailedErrors, model });
+                    return Ok(new { success = false, message = "Model state is invalid", errors = detailedErrors, model });
                 }
 
                 // Создаем новый объект Plants с данными из модели
@@ -115,21 +122,29 @@ namespace BotGarden.Web.Controllers.Dendrology
                 _context.Plants.Add(newPlant);
                 await _context.SaveChangesAsync();
 
-                return Json(new { success = true, message = "Plant successfully added!" });
+                return Ok(new { success = true, message = "Plant successfully added!" });
             }
             catch (Exception ex)
             {
-                return Json(new { success = false, message = $"Internal server error: {ex.Message}", stackTrace = ex.StackTrace });
+                return Ok(new { success = false, message = $"Internal server error: {ex.Message}", stackTrace = ex.StackTrace });
             }
         }
 
 
 
 
+        [HttpGet("ping")]
+        public IActionResult Ping()
+        {
+            Console.WriteLine("Ping method called");
+            return Ok("Pong");
+        }
 
-
-
-
-
+        [HttpPost("echo")]
+        public IActionResult Echo([FromBody] object data)
+        {
+            return Ok(new { message = "Received data", data });
+        }
+       
     }
 }

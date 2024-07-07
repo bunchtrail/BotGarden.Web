@@ -1,6 +1,4 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-
-
 using System.Threading.Tasks;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -10,9 +8,12 @@ using System;
 using BotGarden.Infrastructure.Contexts;
 using BotGarden.Application.DTOs;
 using BotGarden.Domain.Models;
+
 namespace BotGarden.Web.Controllers
 {
-    public class MapController : Controller
+    [ApiController]
+    [Route("api/[controller]")]
+    public class MapController : ControllerBase
     {
         private readonly BotanicGardenContext _context;
 
@@ -21,16 +22,10 @@ namespace BotGarden.Web.Controllers
             _context = context;
         }
 
-        [HttpGet]
-        public async Task<IActionResult> Index()
-        {
-            var plants = await _context.Plants.ToListAsync();
-            return View(plants);
-        }
-
-        [HttpGet]
+        [HttpGet("GetAll")]
         public async Task<IActionResult> GetAll()
         {
+            Console.WriteLine("Getting all plants");
             var plants = await _context.Plants
                 .Where(p => p.Latitude != null && p.Longitude != null)
                 .Select(p => new {
@@ -42,10 +37,23 @@ namespace BotGarden.Web.Controllers
                     p.Note
                 })
                 .ToListAsync();
-            return Json(plants);
+            return Ok(plants);
         }
 
-        [HttpPost]
+        [HttpGet("GetAllAreas")]
+        public async Task<IActionResult> GetAllAreas()
+        {
+            var areas = await _context.BotGarden
+                .Select(a => new {
+                    a.LocationId,
+                    a.LocationPath,
+                    Geometry = a.Geometry.ToText()
+                })
+                .ToListAsync();
+            return Ok(areas);
+        }
+
+        [HttpPost("AddArea")]
         public async Task<IActionResult> AddArea([FromBody] AddAreaRequest request)
         {
             if (ModelState.IsValid)
@@ -83,13 +91,14 @@ namespace BotGarden.Web.Controllers
             return BadRequest(ModelState);
         }
 
-        [HttpPut]
+        [HttpPut("UpdateArea")]
         public async Task<IActionResult> UpdateArea([FromBody] UpdateAreaRequest request)
         {
             if (ModelState.IsValid)
             {
                 try
                 {
+                    Console.WriteLine($"Updating area with ID: {request.LocationId}");
                     var area = await _context.BotGarden.FindAsync(request.LocationId);
                     if (area == null)
                     {
@@ -120,7 +129,8 @@ namespace BotGarden.Web.Controllers
             }
             return BadRequest(ModelState);
         }
-        [HttpDelete("api/map/delete/{id}")]
+
+        [HttpDelete("DeleteArea/{id}")]
         public async Task<IActionResult> DeleteArea(int id)
         {
             try
@@ -142,7 +152,8 @@ namespace BotGarden.Web.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
-        [HttpDelete("api/map/deletePlant/{id}")]
+
+        [HttpDelete("DeletePlant/{id}")]
         public async Task<IActionResult> DeletePlant(int id)
         {
             var plant = await _context.Plants.FindAsync(id);
@@ -156,26 +167,7 @@ namespace BotGarden.Web.Controllers
             return Ok();
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetAllAreas()
-        {
-            var areas = await _context.BotGarden
-                .Select(a => new {
-                    a.LocationId,
-                    a.LocationPath,
-                    Geometry = a.Geometry.ToText()
-                })
-                .ToListAsync();
-
-            foreach (var area in areas)
-            {
-                Console.WriteLine($"Area ID: {area.LocationId}, Geometry: {area.Geometry}");
-            }
-
-            return Json(areas);
-        }
-
-        [HttpPost("/api/map/deletePlantsInArea")]
+        [HttpPost("DeletePlantsInArea")]
         public async Task<IActionResult> DeletePlantsInArea([FromBody] PlantIdsDto plantIdsDto)
         {
             var plants = await _context.Plants
@@ -193,10 +185,4 @@ namespace BotGarden.Web.Controllers
             return Ok("Plants removed successfully.");
         }
     }
-
-    
-
-    
-
-    
 }
