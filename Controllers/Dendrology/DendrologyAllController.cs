@@ -50,7 +50,7 @@ namespace BotGarden.Web.Controllers
         [HttpPost("update")]
         public async Task<IActionResult> UpdatePlants([FromBody] List<PlantUpdateDto> plantUpdates)
         {
-            if (plantUpdates == null || !plantUpdates.Any())
+            if (plantUpdates == null || plantUpdates.Count == 0)
                 return BadRequest("No data provided");
 
             var plantIds = plantUpdates.Select(p => p.PlantId).ToList();
