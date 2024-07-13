@@ -2,9 +2,6 @@
 using Microsoft.EntityFrameworkCore;
 using BotGarden.Application.DTOs;
 using BotGarden.Infrastructure.Contexts;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace BotGarden.Web.Controllers
 {

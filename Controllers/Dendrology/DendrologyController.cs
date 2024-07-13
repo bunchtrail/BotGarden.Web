@@ -4,9 +4,7 @@ using BotGarden.Infrastructure.Contexts;
 using BotGarden.Domain.Models;
 using BotGarden.Domain.Models.Forms.Dendrology;
 using System.Globalization;
-using System.Linq;
-using System.Threading.Tasks;
-using System;
+
 
 namespace BotGarden.Web.Controllers.Dendrology
 {
@@ -33,92 +31,64 @@ namespace BotGarden.Web.Controllers.Dendrology
             var plantFamilies = await _plantFamilyService.GetAllPlantFamiliesAsync();
             var botGardens = await _botGardenService.GetAllBotGardensAsync();
             var genuses = await _genusService.GetAllGenusAsync();
+
             var viewModel = new DendrologyAllViewModel
             {
                 PlantFamilies = plantFamilies,
                 BotGardens = botGardens,
                 Genuses = genuses
             };
+
+            return Ok(viewModel);
+        }
+
+        [HttpGet("word")]
+        public async Task<IActionResult> Word()
+        {
+            var plantFamilies = await _plantFamilyService.GetAllPlantFamiliesAsync();
+            var botGardens = await _botGardenService.GetAllBotGardensAsync();
+            var genuses = await _genusService.GetAllGenusAsync();
+
+            var viewModel = new DendrologyAllViewModel
+            {
+                PlantFamilies = plantFamilies,
+                BotGardens = botGardens,
+                Genuses = genuses
+            };
+
             return Ok(viewModel);
         }
 
         [HttpPost("plants/add")]
         public async Task<IActionResult> AddPlant([FromForm] Plants model, [FromForm] string latitude, [FromForm] string longitude)
         {
-            Console.WriteLine($"AddPlant method called with latitude: {latitude} and longitude: {longitude}");
-
             try
             {
-                // Замена запятой на точку перед конвертацией строки в double
-                latitude = latitude.Replace(',', '.');
-                longitude = longitude.Replace(',', '.');
-
-                // Преобразуем строки в double
-                if (!double.TryParse(latitude, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedLatitude))
+                if (!TryParseCoordinates(latitude, out double parsedLatitude))
                 {
-                    return Ok(new { success = false, message = "Invalid latitude value", receivedValue = latitude });
+                    return BadRequest(new { success = false, message = "Invalid latitude value", receivedValue = latitude });
                 }
 
-                if (!double.TryParse(longitude, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedLongitude))
+                if (!TryParseCoordinates(longitude, out double parsedLongitude))
                 {
-                    return Ok(new { success = false, message = "Invalid longitude value", receivedValue = longitude });
+                    return BadRequest(new { success = false, message = "Invalid longitude value", receivedValue = longitude });
                 }
 
-                // Устанавливаем значения широты и долготы в модель вручную перед проверкой модели
                 model.Latitude = parsedLatitude;
                 model.Longitude = parsedLongitude;
                 Console.WriteLine($"Model: Latitude = {model.Latitude}, Longitude = {model.Longitude}");
 
-                // Удаляем ошибки валидации для полей Latitude и Longitude из ModelState
                 ModelState.Remove(nameof(model.Latitude));
                 ModelState.Remove(nameof(model.Longitude));
 
-                // Проверяем, чтобы модель была валидной
                 if (!ModelState.IsValid)
                 {
-                    var detailedErrors = ModelState
-                        .Where(ms => ms.Value.Errors.Count > 0)
-                        .Select(ms => new
-                        {
-                            Field = ms.Key,
-                            Errors = ms.Value.Errors.Select(e => e.ErrorMessage).ToList()
-                        })
-                        .ToList();
-
-                    return Ok(new { success = false, message = "Model state is invalid", errors = detailedErrors, model });
+                    var detailedErrors = GetModelErrors();
+                    return BadRequest(new { success = false, message = "Model state is invalid", errors = detailedErrors, model });
                 }
 
-                // Создаем новый объект Plants с данными из модели
-                var newPlant = new Plants
-                {
-                    InventorNumber = model.InventorNumber,
-                    FamilyId = model.FamilyId,
-                    GenusId = model.GenusId,
-                    Species = model.Species,
-                    Synonyms = model.Synonyms,
-                    Variety = model.Variety,
-                    Form = model.Form,
-                    SectorId = model.SectorId,
-                    PlantOrigin = model.PlantOrigin,
-                    NaturalHabitat = model.NaturalHabitat,
-                    Determined = model.Determined,
-                    EcologyBiology = model.EcologyBiology,
-                    EconomicUse = model.EconomicUse,
-                    DateOfPlanting = model.DateOfPlanting,
-                    Originator = model.Originator,
-                    Date = model.Date,
-                    Country = model.Country,
-                    ProtectionStatus = model.ProtectionStatus,
-                    HerbariumPresence = model.HerbariumPresence,
-                    FilledOut = model.FilledOut,
-                    ImagePath = model.ImagePath,
-                    Latitude = model.Latitude,  // Используем конвертированные значения
-                    Longitude = model.Longitude,  // Используем конвертированные значения
-                    HerbariumDuplicate = model.HerbariumDuplicate,
-                    Note = model.Note,
-                };
+                var newPlant = CreatePlantFromModel(model);
 
-                // Добавляем и сохраняем новое растение
                 _context.Plants.Add(newPlant);
                 await _context.SaveChangesAsync();
 
@@ -126,25 +96,58 @@ namespace BotGarden.Web.Controllers.Dendrology
             }
             catch (Exception ex)
             {
-                return Ok(new { success = false, message = $"Internal server error: {ex.Message}", stackTrace = ex.StackTrace });
+                return StatusCode(500, new { success = false, message = $"Internal server error: {ex.Message}", stackTrace = ex.StackTrace });
             }
         }
 
-
-
-
-        [HttpGet("ping")]
-        public IActionResult Ping()
+        private bool TryParseCoordinates(string value, out double result)
         {
-            Console.WriteLine("Ping method called");
-            return Ok("Pong");
+            value = value.Replace(',', '.');
+            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
         }
 
-        [HttpPost("echo")]
-        public IActionResult Echo([FromBody] object data)
+        private object GetModelErrors()
         {
-            return Ok(new { message = "Received data", data });
+            return ModelState
+                .Where(ms => ms.Value.Errors.Count > 0)
+                .Select(ms => new
+                {
+                    Field = ms.Key,
+                    Errors = ms.Value.Errors.Select(e => e.ErrorMessage).ToList()
+                })
+                .ToList();
         }
-       
+
+        private Plants CreatePlantFromModel(Plants model)
+        {
+            return new Plants
+            {
+                InventorNumber = model.InventorNumber,
+                FamilyId = model.FamilyId,
+                GenusId = model.GenusId,
+                Species = model.Species,
+                Synonyms = model.Synonyms,
+                Variety = model.Variety,
+                Form = model.Form,
+                SectorId = model.SectorId,
+                PlantOrigin = model.PlantOrigin,
+                NaturalHabitat = model.NaturalHabitat,
+                Determined = model.Determined,
+                EcologyBiology = model.EcologyBiology,
+                EconomicUse = model.EconomicUse,
+                DateOfPlanting = model.DateOfPlanting,
+                Originator = model.Originator,
+                Date = model.Date,
+                Country = model.Country,
+                ProtectionStatus = model.ProtectionStatus,
+                HerbariumPresence = model.HerbariumPresence,
+                FilledOut = model.FilledOut,
+                ImagePath = model.ImagePath,
+                Latitude = model.Latitude,
+                Longitude = model.Longitude,
+                HerbariumDuplicate = model.HerbariumDuplicate,
+                Note = model.Note,
+            };
+        }
     }
 }

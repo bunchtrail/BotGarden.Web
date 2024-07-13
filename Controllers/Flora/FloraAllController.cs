@@ -79,7 +79,6 @@ public class FloraAllController : Controller
 				plant.Country = update.Country ?? plant.Country;
 				plant.ImagePath = update.ImagePath ?? plant.ImagePath;
 
-				// Обновляем булевы значения, которые не могут быть null в вашем DTO, учитывая, что они могут быть опциональными
 				if (update.HerbariumPresence.HasValue)
 					plant.HerbariumPresence = update.HerbariumPresence.Value;
 

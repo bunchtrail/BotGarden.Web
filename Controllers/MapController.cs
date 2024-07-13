@@ -1,13 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
-using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using System;
 using BotGarden.Infrastructure.Contexts;
 using BotGarden.Application.DTOs;
 using BotGarden.Domain.Models;
+
 
 namespace BotGarden.Web.Controllers
 {
@@ -27,14 +25,14 @@ namespace BotGarden.Web.Controllers
         {
             var plants = await _context.Plants
                 .Where(p => p.Latitude != null && p.Longitude != null)
-                .Select(p => new
+                .Select(p => new PlantDto
                 {
-                    p.PlantId,
-                    p.Species,
-                    p.Variety,
-                    p.Latitude,
-                    p.Longitude,
-                    p.Note
+                    PlantId = p.PlantId,
+                    Species = p.Species,
+                    Variety = p.Variety,
+                    Latitude = p.Latitude,
+                    Longitude = p.Longitude,
+                    Note = p.Note
                 })
                 .ToListAsync();
             return Ok(plants);
@@ -44,10 +42,10 @@ namespace BotGarden.Web.Controllers
         public async Task<IActionResult> GetAllAreas()
         {
             var areas = await _context.BotGarden
-                .Select(a => new
+                .Select(a => new AreaDto
                 {
-                    a.LocationId,
-                    a.LocationPath,
+                    LocationId = a.LocationId,
+                    LocationPath = a.LocationPath,
                     Geometry = a.Geometry.ToText()
                 })
                 .ToListAsync();
@@ -62,12 +60,10 @@ namespace BotGarden.Web.Controllers
                 return BadRequest(ModelState);
             }
 
-            var wktReader = new WKTReader();
-            var geometry = wktReader.Read(request.Geometry) as Polygon;
-
+            var geometry = ParseGeometry(request.Geometry);
             if (geometry == null)
             {
-                return BadRequest("Invalid geometry format.");
+                return BadRequest("Invalid geometry format");
             }
 
             var newArea = new BotGardenMode
@@ -79,14 +75,13 @@ namespace BotGarden.Web.Controllers
             _context.BotGarden.Add(newArea);
             await _context.SaveChangesAsync();
 
-            return Ok(new
+            return Ok(new AreaDto
             {
-                newArea.LocationId,
-                newArea.LocationPath,
+                LocationId = newArea.LocationId,
+                LocationPath = newArea.LocationPath,
+                Geometry = newArea.Geometry.ToText()
             });
-
         }
-
 
         [HttpPut("UpdateArea")]
         public async Task<IActionResult> UpdateArea([FromBody] UpdateAreaRequest request)
@@ -94,7 +89,6 @@ namespace BotGarden.Web.Controllers
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
-
             }
 
             var area = await _context.BotGarden.FindAsync(request.LocationId);
@@ -103,9 +97,7 @@ namespace BotGarden.Web.Controllers
                 return NotFound("Area not found.");
             }
 
-            var wktReader = new WKTReader();
-            var geometry = wktReader.Read(request.Geometry) as Polygon;
-
+            var geometry = ParseGeometry(request.Geometry);
             if (geometry == null)
             {
                 return BadRequest("Invalid geometry format.");
@@ -114,17 +106,17 @@ namespace BotGarden.Web.Controllers
             area.Geometry = geometry;
             await _context.SaveChangesAsync();
 
-            return Ok(new
+            return Ok(new AreaDto
             {
-                area.LocationId,
-                area.LocationPath,
+                LocationId = area.LocationId,
+                LocationPath = area.LocationPath,
+                Geometry = area.Geometry.ToText()
             });
         }
 
         [HttpDelete("DeleteArea/{id}")]
         public async Task<IActionResult> DeleteArea(int id)
         {
-
             var area = await _context.BotGarden.FindAsync(id);
             if (area == null)
             {
@@ -154,7 +146,7 @@ namespace BotGarden.Web.Controllers
         [HttpPost("DeletePlantsInArea")]
         public async Task<IActionResult> DeletePlantsInArea([FromBody] PlantIdsDto plantIdsDto)
         {
-            if (plantIdsDto == null || plantIdsDto.PlantIds == null || plantIdsDto.PlantIds.Count == 0)
+            if (plantIdsDto?.PlantIds == null || !plantIdsDto.PlantIds.Any())
             {
                 return BadRequest("Invalid request payload.");
             }
@@ -163,7 +155,7 @@ namespace BotGarden.Web.Controllers
                 .Where(p => plantIdsDto.PlantIds.Contains(p.PlantId))
                 .ToListAsync();
 
-            if (plants.Count == 0)
+            if (!plants.Any())
             {
                 return NotFound("No plants found in the selected area.");
             }
@@ -174,5 +166,27 @@ namespace BotGarden.Web.Controllers
             return Ok("Plants removed successfully.");
         }
 
+        private Polygon ParseGeometry(string wkt)
+        {
+            var wktReader = new WKTReader();
+            return wktReader.Read(wkt) as Polygon;
+        }
+    }
+
+    public class PlantDto
+    {
+        public int PlantId { get; set; }
+        public string Species { get; set; }
+        public string Variety { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
+        public string Note { get; set; }
+    }
+
+    public class AreaDto
+    {
+        public int LocationId { get; set; }
+        public string LocationPath { get; set; }
+        public string Geometry { get; set; }
     }
 }

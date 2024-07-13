@@ -15,7 +15,6 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Register the database context
 builder.Services.AddDbContext<BotanicGardenContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("BotanicalDb"),
