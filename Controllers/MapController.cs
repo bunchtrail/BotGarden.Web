@@ -173,6 +173,7 @@ namespace BotGarden.Web.Controllers
         }
     }
 
+    //TODO: decide what to display
     public class PlantDto
     {
         public int PlantId { get; set; }
