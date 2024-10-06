@@ -21,7 +21,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<BotanicGardenContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("BotanicalDb"),
-        x => x.UseNetTopologySuite())
+           sqlOptions => sqlOptions.UseNetTopologySuite())
     .LogTo(Console.WriteLine, LogLevel.Information);
 });
 
