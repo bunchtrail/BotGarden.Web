@@ -19,7 +19,7 @@
    ```
    version: '3.8'
 
-    services:
+   services:
       frontend:
         image: loleenko/botgardenapp-frontend:latest
         ports:
@@ -55,7 +55,7 @@
         ports:
           - "5432:5432"
     
-    volumes:
+   volumes:
       pgdata:
 5. Запустить команду в директории с `docker-compose.yml`
 ```
