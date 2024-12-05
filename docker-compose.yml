@@ -1,0 +1,43 @@
+﻿
+services:
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ezpass1
+      POSTGRES_DB: BotGarden
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  webapi:
+    build:
+      context: .  # Относительный путь
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__BotanicalDb=Server=postgres;Database=BotGarden;Port=5432;User Id=postgres;Password=ezpass1
+    volumes:
+      - data_protection_keys:/root/.aspnet/DataProtection-Keys  # Для сохранения ключей Data Protection
+
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile.migration
+    depends_on:
+      - postgres
+    volumes:
+      - ../BotGarden.Backend/BotGarden.Infrastructure:/app/Backend
+      - .:/app/WebAPI
+    working_dir: /app/WebAPI
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__BotanicalDb=Server=postgres;Database=BotGarden;Port=5432;User Id=postgres;Password=ezpass1
+
+volumes:
+  pgdata:
+  data_protection_keys:

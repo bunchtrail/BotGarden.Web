@@ -5,12 +5,15 @@ using NetTopologySuite.IO;
 using BotGarden.Infrastructure.Contexts;
 using BotGarden.Application.DTOs;
 using BotGarden.Domain.Models;
+using Microsoft.AspNetCore.Authorization;
 
 
 namespace BotGarden.Web.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
+
     public class MapController : ControllerBase
     {
         private readonly BotanicGardenContext _context;
