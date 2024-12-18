@@ -28,39 +28,40 @@ namespace BotGardens.Web.Controllers
         }
 
         [HttpPost("register")]
+        [AllowAnonymous]
         public async Task<IActionResult> Register([FromBody] UserDto userDto)
         {
-            // Валидация входных данных
             if (userDto == null || string.IsNullOrEmpty(userDto.Email) || string.IsNullOrEmpty(userDto.Password))
             {
                 return BadRequest("Необходимо указать email и пароль.");
             }
 
-            // Проверка существующего пользователя
             var existingUser = await _context.Users.SingleOrDefaultAsync(u => u.userEmail == userDto.Email);
             if (existingUser != null)
             {
                 return Conflict("Пользователь с таким email уже существует.");
             }
 
-            var user = new Users
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword(userDto.Password);
+
+            var newUser = new Users
             {
                 userEmail = userDto.Email,
-                userHashedPass = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
+                userHashedPass = hashedPassword,
                 userRole = "User"
             };
 
-            _context.Users.Add(user);
+            _context.Users.Add(newUser);
             await _context.SaveChangesAsync();
 
-            // Генерация токенов
-            var (accessToken, refreshToken) = await GenerateTokens(user);
+            var (accessToken, refreshTokenPlain) = await GenerateTokens(newUser);
 
+            // Возвращаем плейн refresh-токен клиенту, он должен хранить его в защищенном месте (httpOnly cookie)
             return Ok(new
             {
                 Message = "Пользователь успешно зарегистрирован",
                 AccessToken = accessToken,
-                RefreshToken = refreshToken
+                RefreshToken = refreshTokenPlain
             });
         }
 
@@ -68,7 +69,6 @@ namespace BotGardens.Web.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] UserDto userDto)
         {
-            // Валидация входных данных
             if (userDto == null || string.IsNullOrEmpty(userDto.Email) || string.IsNullOrEmpty(userDto.Password))
             {
                 return BadRequest("Необходимо указать email и пароль.");
@@ -80,13 +80,12 @@ namespace BotGardens.Web.Controllers
                 return Unauthorized("Неверный email или пароль.");
             }
 
-            // Генерация токенов
-            var (accessToken, refreshToken) = await GenerateTokens(user);
+            var (accessToken, refreshTokenPlain) = await GenerateTokens(user);
 
             return Ok(new
             {
                 AccessToken = accessToken,
-                RefreshToken = refreshToken
+                RefreshToken = refreshTokenPlain
             });
         }
 
@@ -103,16 +102,21 @@ namespace BotGardens.Web.Controllers
             var user = await _context.Users.SingleOrDefaultAsync(u => u.userEmail == email);
             if (user == null)
             {
-                return NotFound();
+                return NotFound("Пользователь не найден.");
             }
 
-            return Ok(new { user.userEmail, user.userRole });
+            return Ok(new
+            {
+                Email = user.userEmail,
+                Role = user.userRole
+            });
         }
 
         [HttpPost("refresh")]
+        [AllowAnonymous]
         public async Task<IActionResult> RefreshToken([FromBody] TokenModel tokenModel)
         {
-            if (tokenModel == null || string.IsNullOrEmpty(tokenModel.RefreshToken))
+            if (tokenModel == null || string.IsNullOrEmpty(tokenModel.RefreshToken) || string.IsNullOrEmpty(tokenModel.Token))
             {
                 return BadRequest("Некорректный запрос.");
             }
@@ -123,19 +127,28 @@ namespace BotGardens.Web.Controllers
                 return Unauthorized("Недействительный access-токен.");
             }
 
-
-            var email = principal.Identity.Name;
+            var email = principal.Identity?.Name;
+            if (string.IsNullOrEmpty(email))
+            {
+                return Unauthorized("Недействительный токен.");
+            }
 
             var user = await _context.Users.SingleOrDefaultAsync(u => u.userEmail == email);
-            if (user == null || user.RefreshToken != tokenModel.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+            if (user == null || string.IsNullOrEmpty(user.RefreshTokenHash))
+            {
+                return Unauthorized("Пользователь не найден или не авторизован.");
+            }
+
+            // Проверяем совпадение хэша refresh-токена
+            if (!VerifyRefreshToken(tokenModel.RefreshToken, user.RefreshTokenHash) ||
+                user.RefreshTokenExpiryTime <= DateTime.UtcNow)
             {
                 return Unauthorized("Недействительный или истекший refresh-токен.");
             }
 
             var newAccessToken = GenerateJwtToken(user);
-            var newRefreshToken = GenerateRefreshToken();
-
-            user.RefreshToken = newRefreshToken;
+            var newRefreshTokenPlain = GenerateRefreshToken();
+            user.RefreshTokenHash = HashRefreshToken(newRefreshTokenPlain);
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
 
             _context.Users.Update(user);
@@ -144,28 +157,28 @@ namespace BotGardens.Web.Controllers
             return Ok(new
             {
                 AccessToken = newAccessToken,
-                RefreshToken = newRefreshToken
+                RefreshToken = newRefreshTokenPlain
             });
         }
 
-        private async Task<(string AccessToken, string RefreshToken)> GenerateTokens(Users user)
+        private async Task<(string AccessToken, string RefreshTokenPlain)> GenerateTokens(Users user)
         {
             var accessToken = GenerateJwtToken(user);
-            var refreshToken = GenerateRefreshToken();
+            var refreshTokenPlain = GenerateRefreshToken();
+            var refreshTokenHash = HashRefreshToken(refreshTokenPlain);
 
-            // Сохранение refresh-токена в базе данных
-            user.RefreshToken = refreshToken;
+            user.RefreshTokenHash = refreshTokenHash;
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
 
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
 
-            return (accessToken, refreshToken);
+            return (accessToken, refreshTokenPlain);
         }
 
         private string GenerateJwtToken(Users user)
         {
-            var claims = new[]
+            var claims = new Claim[]
             {
                 new Claim(ClaimTypes.Name, user.userEmail),
                 new Claim(ClaimTypes.Role, user.userRole)
@@ -178,8 +191,10 @@ namespace BotGardens.Web.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddHours(10),
-                signingCredentials: creds);
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddHours(1), // Access-токен на 1 час
+                signingCredentials: creds
+            );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
@@ -190,8 +205,24 @@ namespace BotGardens.Web.Controllers
             using (var rng = RandomNumberGenerator.Create())
             {
                 rng.GetBytes(randomNumber);
-                return Convert.ToBase64String(randomNumber);
             }
+            return Convert.ToBase64String(randomNumber);
+        }
+
+        private string HashRefreshToken(string refreshTokenPlain)
+        {
+            // Можно использовать HMACSHA256
+            using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])))
+            {
+                var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(refreshTokenPlain));
+                return Convert.ToBase64String(hash);
+            }
+        }
+
+        private bool VerifyRefreshToken(string refreshTokenPlain, string storedHash)
+        {
+            var hashedInput = HashRefreshToken(refreshTokenPlain);
+            return storedHash == hashedInput;
         }
 
         private ClaimsPrincipal GetPrincipalFromExpiredToken(string token)
@@ -204,25 +235,29 @@ namespace BotGardens.Web.Controllers
                 ValidAudience = _configuration["Jwt:Audience"],
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])),
-                ValidateLifetime = false // Позволяем валидировать истекшие токены
+                ValidateLifetime = false // Разрешаем истекший токен для извлечения клеймов
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
-            SecurityToken securityToken;
-
             try
             {
-                var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out securityToken);
-                return principal;
+                var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out var securityToken);
+                // Проверяем, что токен действительно JWT
+                if (securityToken is JwtSecurityToken jwtToken &&
+                    jwtToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    return principal;
+                }
             }
             catch
             {
                 return null;
             }
+
+            return null;
         }
     }
 
-    // Объекты передачи данных (DTO)
     public class UserDto
     {
         public string Email { get; set; }

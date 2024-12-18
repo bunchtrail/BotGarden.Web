@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿// src/modules/Map/controllers/MapController.cs
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -6,21 +7,27 @@ using BotGarden.Infrastructure.Contexts;
 using BotGarden.Application.DTOs;
 using BotGarden.Domain.Models;
 using Microsoft.AspNetCore.Authorization;
-
+using System.IO;
+using Microsoft.AspNetCore.Hosting;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http; // Added for IFormFile
+using System.ComponentModel.DataAnnotations; // Added for [Required]
 
 namespace BotGarden.Web.Controllers
 {
     [ApiController]
     [Authorize]
     [Route("api/[controller]")]
-
     public class MapController : ControllerBase
     {
         private readonly BotanicGardenContext _context;
+        private readonly IWebHostEnvironment _environment;
 
-        public MapController(BotanicGardenContext context)
+        public MapController(BotanicGardenContext context, IWebHostEnvironment environment)
         {
             _context = context;
+            _environment = environment;
         }
 
         [HttpGet("GetAll")]
@@ -169,28 +176,136 @@ namespace BotGarden.Web.Controllers
             return Ok("Plants removed successfully.");
         }
 
+        /// <summary>
+        /// Получить текущий путь к изображению карты.
+        /// </summary>
+        [HttpGet("GetMapImage")]
+        public async Task<IActionResult> GetMapImage()
+        {
+            var map = await _context.Map.FirstOrDefaultAsync();
+            if (map == null || string.IsNullOrEmpty(map.MapImagePath))
+            {
+                return NotFound("Карта не загружена.");
+            }
+
+            return Ok(new { MapImagePath = map.MapImagePath });
+        }
+
+        /// <summary>
+        /// Загрузка изображения карты и сохранение пути в базе данных.
+        /// </summary>
+        /// <param name="file">Файл изображения карты.</param>
+        /// <returns>Результат операции.</returns>
+        [HttpPost("UploadMapImage")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadMapImage([Required][FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("Файл не выбран.");
+
+            // Проверка типа файла (опционально)
+            var permittedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+            if (string.IsNullOrEmpty(extension) || !permittedExtensions.Contains(extension))
+            {
+                return BadRequest("Недопустимый тип файла.");
+            }
+
+            // Ограничение размера файла (например, 500 МБ) (опционально)
+            if (file.Length > 500 * 1024 * 1024) // 500 МБ
+            {
+                return BadRequest("Размер файла превышает допустимый предел (500 МБ).");
+            }
+
+            // Сохранение файла на сервере
+            var uploadsFolder = Path.Combine(_environment.ContentRootPath, "Uploads");
+            if (!Directory.Exists(uploadsFolder))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+            var uniqueFileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{Guid.NewGuid()}{extension}";
+            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Получение существующей записи Map
+            var map = await _context.Map.FirstOrDefaultAsync();
+            if (map == null)
+            {
+                // Если запись отсутствует, создаём новую
+                map = new Map
+                {
+                    MapImagePath = Path.Combine("Uploads", uniqueFileName)
+                };
+                _context.Map.Add(map);
+            }
+            else
+            {
+                // Если запись существует, обновляем путь к изображению
+                if (!string.IsNullOrEmpty(map.MapImagePath))
+                {
+                    var oldFilePath = Path.Combine(_environment.ContentRootPath, map.MapImagePath);
+                    if (System.IO.File.Exists(oldFilePath))
+                    {
+                        System.IO.File.Delete(oldFilePath);
+                    }
+                }
+
+                map.MapImagePath = Path.Combine("Uploads", uniqueFileName);
+                _context.Map.Update(map);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { MapImagePath = map.MapImagePath });
+        }
+    
         private Polygon ParseGeometry(string wkt)
         {
             var wktReader = new WKTReader();
             return wktReader.Read(wkt) as Polygon;
         }
-    }
 
-    //TODO: decide what to display
-    public class PlantDto
-    {
-        public int PlantId { get; set; }
-        public string Species { get; set; }
-        public string Variety { get; set; }
-        public double? Latitude { get; set; }
-        public double? Longitude { get; set; }
-        public string Note { get; set; }
-    }
 
-    public class AreaDto
-    {
-        public int LocationId { get; set; }
-        public string LocationPath { get; set; }
-        public string Geometry { get; set; }
+        // DTO-классы
+        public class PlantDto
+        {
+            public int PlantId { get; set; }
+            public string Species { get; set; }
+            public string Variety { get; set; }
+            public double? Latitude { get; set; }
+            public double? Longitude { get; set; }
+            public string Note { get; set; }
+        }
+
+        public class AreaDto
+        {
+            public int LocationId { get; set; }
+            public string LocationPath { get; set; }
+            public string Geometry { get; set; }
+        }
+
+        public class AddAreaRequest
+        {
+            public string LocationPath { get; set; }
+            public string Geometry { get; set; }
+        }
+
+        public class UpdateAreaRequest
+        {
+            public int LocationId { get; set; }
+            public string LocationPath { get; set; }
+            public string Geometry { get; set; }
+        }
+
+        public class PlantIdsDto
+        {
+            public List<int> PlantIds { get; set; }
+        }
     }
 }

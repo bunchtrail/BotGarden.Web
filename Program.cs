@@ -1,9 +1,11 @@
-﻿using BotGarden.Application.Services;
+﻿// src/BotGarden.Web/Program.cs
+using BotGarden.Application.Services;
 using BotGarden.Application.Services.MainFormAdd;
 using BotGarden.Applications.Services;
 using BotGarden.Domain.Models;
 using BotGarden.Infrastructure.Contexts;
 using BotGarden.Infrastructure.Data.Repositories;
+using BotGarden.Web.Filters; // Added for FileUploadOperationFilter
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
@@ -11,17 +13,27 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Reflection;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ======================================
-// Настройка служб (Services Configuration)
+// Configuration Settings
 // ======================================
 
-// Определение политики авторизации
+// Read UseJwt setting from configuration
 var useJwt = builder.Configuration.GetValue<bool>("UseJwt");
 
+// Setup Logging
+builder.Services.AddLogging(logging =>
+{
+    logging.ClearProviders();
+    logging.AddConsole();
+    logging.AddDebug(); // Added for more detailed logging
+});
+
+// Setup Controllers with Authorization
 builder.Services.AddControllers(options =>
 {
     if (useJwt)
@@ -33,10 +45,8 @@ builder.Services.AddControllers(options =>
     }
 });
 
-// Добавление описания конечных точек API для Swagger
+// Setup Swagger
 builder.Services.AddEndpointsApiExplorer();
-
-// Настройка Swagger с поддержкой JWT аутентификации
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
@@ -81,25 +91,36 @@ builder.Services.AddSwaggerGen(c =>
             }
         });
     }
+
+    // Register Operation Filter for handling file uploads
+    c.OperationFilter<FileUploadOperationFilter>();
+
+    // Enable XML comments (optional)
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
 });
 
-// Настройка контекста базы данных с использованием PostgreSQL
+// Setup DbContext with PostgreSQL and NetTopologySuite
 builder.Services.AddDbContext<BotanicGardenContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("BotanicalDb"),
-           sqlOptions => sqlOptions.UseNetTopologySuite()) // Поддержка географических данных
-    .EnableSensitiveDataLogging() // Включить детальное логирование (только для разработки)
-    .LogTo(Console.WriteLine, LogLevel.Information); // Логирование SQL-запросов в консоль
+           sqlOptions => sqlOptions.UseNetTopologySuite()) // Support for geographic data
+    .EnableSensitiveDataLogging() // Enable detailed logging (development only)
+    .LogTo(Console.WriteLine, LogLevel.Information); // Log SQL queries to console
 });
 
-// Регистрация репозиториев
+// Register Repositories
 builder.Services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
 builder.Services.AddScoped<IRepository<Plants>, PlantsRepository>();
 builder.Services.AddScoped<IRepository<PlantFamilies>, PlantFamiliesRepository>();
 builder.Services.AddScoped<IRepository<BotGardenMode>, BotGardenRepository>();
 builder.Services.AddScoped<IRepository<Genus>, GenusRepository>();
 
-// Регистрация сервисов
+// Register Services
 builder.Services.AddScoped<PlantService>();
 builder.Services.AddScoped<GenusService>();
 builder.Services.AddScoped<SectorsService>();
@@ -107,25 +128,12 @@ builder.Services.AddScoped<PlantFamilyService>();
 builder.Services.AddScoped<CollectionsService>();
 builder.Services.AddScoped<BotGardenService>();
 
-// Добавление авторизации
+// Setup Authentication and Authorization
 if (useJwt)
 {
     builder.Services.AddAuthorization();
-}
-else
-{
-    // Политика по умолчанию, разрешающая анонимный доступ
-    builder.Services.AddAuthorization(options =>
-    {
-        options.DefaultPolicy = new AuthorizationPolicyBuilder()
-            .RequireAssertion(_ => true)
-            .Build();
-    });
-}
 
-// Настройка JWT аутентификации
-if (useJwt)
-{
+    // Configure JWT Authentication
     var jwtSettings = builder.Configuration.GetSection("Jwt");
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         .AddJwtBearer(options =>
@@ -141,43 +149,77 @@ if (useJwt)
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"])),
                 ClockSkew = TimeSpan.Zero
             };
+
+            // Support sending token via Authorization header
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
+                    if (!string.IsNullOrEmpty(accessToken))
+                    {
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                }
+            };
         });
 }
+else
+{
+    // Default policy allowing anonymous access
+    builder.Services.AddAuthorization(options =>
+    {
+        options.DefaultPolicy = new AuthorizationPolicyBuilder()
+            .RequireAssertion(_ => true)
+            .Build();
+    });
+}
 
-// Включение CORS (разрешаем все запросы)
+// Setup CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
+    options.AddPolicy("AllowSpecificOrigin", policyBuilder =>
     {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+        policyBuilder.WithOrigins("http://localhost:5173") // Specify your client URL
+                   .AllowAnyMethod()
+                   .AllowAnyHeader()
+                   .AllowCredentials(); // Allow credentials to be sent
     });
 });
 
-// Добавление логирования
-builder.Services.AddLogging(logging =>
-{
-    logging.ClearProviders();
-    logging.AddConsole();
-    // Добавьте другие провайдеры логирования при необходимости
-});
-
-// ==============================
-// Конфигурация конвейера (Pipeline)
-// ==============================
-
+// Build the application
 var app = builder.Build();
 
-// Применение миграций и инициализация данных
-using (var scope = app.Services.CreateScope())
+// ======================================
+// Middleware Configuration
+// ======================================
+
+// Enable detailed error pages in development
+if (app.Environment.IsDevelopment())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<BotanicGardenContext>();
-    dbContext.Database.Migrate(); // Применяем миграции
-    dbContext.EnsureDefaultUser(); // Создаем пользователя по умолчанию, если его нет
+    app.UseDeveloperExceptionPage();
 }
 
-// Настройка middleware Swagger для генерации и отображения документации
+// Apply migrations and initialize data
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var dbContext = services.GetRequiredService<BotanicGardenContext>();
+        dbContext.Database.Migrate(); // Apply migrations
+        dbContext.EnsureDefaultUser(); // Create default user if not exists
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred while applying migrations or initializing data.");
+        throw; // Prevent the application from starting if there's an initialization error
+    }
+}
+
+// Configure Swagger middleware
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -185,23 +227,22 @@ app.UseSwaggerUI(c =>
     c.DocumentTitle = "BotGarden API Documentation";
 });
 
-// Включение HTTPS перенаправления
+// Enable HTTPS redirection
 app.UseHttpsRedirection();
 
-// Включение CORS
-app.UseCors("AllowAll");
+// Enable CORS with the specified policy
+app.UseCors("AllowSpecificOrigin");
 
-// Включение аутентификации и авторизации
+// Enable Authentication and Authorization
 if (useJwt)
 {
     app.UseAuthentication();
 }
 
-// Всегда вызываем UseAuthorization
 app.UseAuthorization();
 
-// Маршрутизация контроллеров
+// Map controller routes
 app.MapControllers();
 
-// Запуск приложения
+// Run the application
 app.Run();
