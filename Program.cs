@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.FileProviders; // Добавлено для PhysicalFileProvider
+using Microsoft.Extensions.FileProviders; // Added for PhysicalFileProvider
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -31,7 +31,7 @@ builder.Services.AddLogging(logging =>
 {
     logging.ClearProviders();
     logging.AddConsole();
-    logging.AddDebug(); // Added for more detailed logging
+    logging.AddDebug(); // Detailed logging
 });
 
 // Setup Controllers with Authorization
@@ -93,7 +93,7 @@ builder.Services.AddSwaggerGen(c =>
         });
     }
 
-    // Register Operation Filter for handling file uploads
+    // Register Operation Filter for file uploads
     c.OperationFilter<FileUploadOperationFilter>();
 
     // Enable XML comments (optional)
@@ -109,9 +109,9 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddDbContext<BotanicGardenContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("BotanicalDb"),
-           sqlOptions => sqlOptions.UseNetTopologySuite()) // Support for geographic data
-    .EnableSensitiveDataLogging() // Enable detailed logging (development only)
-    .LogTo(Console.WriteLine, LogLevel.Information); // Log SQL queries to console
+           sqlOptions => sqlOptions.UseNetTopologySuite())
+           .EnableSensitiveDataLogging()
+           .LogTo(Console.WriteLine, LogLevel.Information);
 });
 
 // Register Repositories
@@ -147,7 +147,8 @@ if (useJwt)
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = jwtSettings["Issuer"],
                 ValidAudience = jwtSettings["Audience"],
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"])),
+                IssuerSigningKey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(jwtSettings["Key"])),
                 ClockSkew = TimeSpan.Zero
             };
 
@@ -156,7 +157,10 @@ if (useJwt)
             {
                 OnMessageReceived = context =>
                 {
-                    var accessToken = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
+                    var accessToken = context.Request.Headers["Authorization"]
+                        .FirstOrDefault()
+                        ?.Split(" ")
+                        .Last();
                     if (!string.IsNullOrEmpty(accessToken))
                     {
                         context.Token = accessToken;
@@ -182,10 +186,22 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowSpecificOrigin", policyBuilder =>
     {
-        policyBuilder.WithOrigins("http://localhost:5173") // Specify your client URL
-                   .AllowAnyMethod()
-                   .AllowAnyHeader()
-                   .AllowCredentials(); // Allow credentials to be sent
+        policyBuilder
+           .WithOrigins("http://localhost:5173") // Your client URL
+           .AllowAnyMethod()
+           .AllowAnyHeader()
+           .AllowCredentials();
+    });
+
+    // Доп. политика для статических файлов (если вдруг понадобится отдельно)
+    options.AddPolicy("AllowStaticFiles", policyBuilder =>
+    {
+        policyBuilder
+           .WithOrigins("http://localhost:5173")
+           .AllowAnyMethod()
+           .AllowAnyHeader()
+           .WithExposedHeaders("Content-Disposition")
+           .SetIsOriginAllowed(_ => true);
     });
 });
 
@@ -202,17 +218,29 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
-// Настройка отдачи статических файлов из папки Uploads
+// Готовим папку Uploads
 var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "Uploads");
 if (!Directory.Exists(uploadsPath))
 {
     Directory.CreateDirectory(uploadsPath);
 }
 
+// Настраиваем отдачу статических файлов с CORS заголовками
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(uploadsPath),
     RequestPath = "/Uploads",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers.Append(
+            "Access-Control-Allow-Origin", "http://localhost:5173");
+        ctx.Context.Response.Headers.Append(
+            "Access-Control-Allow-Methods", "GET");
+        ctx.Context.Response.Headers.Append(
+            "Access-Control-Allow-Headers", "Content-Type");
+        ctx.Context.Response.Headers.Append(
+            "Cross-Origin-Resource-Policy", "cross-origin");
+    }
 });
 
 // Apply migrations and initialize data
@@ -222,14 +250,14 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = services.GetRequiredService<BotanicGardenContext>();
-        dbContext.Database.Migrate(); // Apply migrations
-        dbContext.EnsureDefaultUser(); // Create default user if not exists
+        dbContext.Database.Migrate();
+        dbContext.EnsureDefaultUser();
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
         logger.LogError(ex, "An error occurred while applying migrations or initializing data.");
-        throw; // Prevent the application from starting if there's an initialization error
+        throw;
     }
 }
 
@@ -244,15 +272,14 @@ app.UseSwaggerUI(c =>
 // Enable HTTPS redirection
 app.UseHttpsRedirection();
 
-// Enable CORS with the specified policy
+// Enable CORS
 app.UseCors("AllowSpecificOrigin");
 
-// Enable Authentication and Authorization
+// Authentication / Authorization
 if (useJwt)
 {
     app.UseAuthentication();
 }
-
 app.UseAuthorization();
 
 // Map controller routes

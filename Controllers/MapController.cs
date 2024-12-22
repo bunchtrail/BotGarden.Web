@@ -11,8 +11,8 @@ using System.IO;
 using Microsoft.AspNetCore.Hosting;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http; // Added for IFormFile
-using System.ComponentModel.DataAnnotations; // Added for [Required]
+using Microsoft.AspNetCore.Http; // For IFormFile
+using System.ComponentModel.DataAnnotations; // For [Required]
 
 namespace BotGarden.Web.Controllers
 {
@@ -194,8 +194,6 @@ namespace BotGarden.Web.Controllers
         /// <summary>
         /// Загрузка изображения карты и сохранение пути в базе данных.
         /// </summary>
-        /// <param name="file">Файл изображения карты.</param>
-        /// <returns>Результат операции.</returns>
         [HttpPost("UploadMapImage")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadMapImage([Required][FromForm] IFormFile file)
@@ -212,8 +210,8 @@ namespace BotGarden.Web.Controllers
                 return BadRequest("Недопустимый тип файла.");
             }
 
-            // Ограничение размера файла (например, 500 МБ) (опционально)
-            if (file.Length > 500 * 1024 * 1024) // 500 МБ
+            // Ограничение размера файла (например, 500 МБ)
+            if (file.Length > 500 * 1024 * 1024)
             {
                 return BadRequest("Размер файла превышает допустимый предел (500 МБ).");
             }
@@ -237,7 +235,7 @@ namespace BotGarden.Web.Controllers
             var map = await _context.Map.FirstOrDefaultAsync();
             if (map == null)
             {
-                // Если запись отсутствует, создаём новую
+                // Если записи нет — создаём новую
                 map = new Map
                 {
                     MapImagePath = Path.Combine("Uploads", uniqueFileName)
@@ -246,7 +244,7 @@ namespace BotGarden.Web.Controllers
             }
             else
             {
-                // Если запись существует, обновляем путь к изображению
+                // Если запись есть — обновляем путь
                 if (!string.IsNullOrEmpty(map.MapImagePath))
                 {
                     var oldFilePath = Path.Combine(_environment.ContentRootPath, map.MapImagePath);
@@ -264,7 +262,7 @@ namespace BotGarden.Web.Controllers
 
             return Ok(new { MapImagePath = map.MapImagePath });
         }
-    
+
         private Polygon ParseGeometry(string wkt)
         {
             var wktReader = new WKTReader();
