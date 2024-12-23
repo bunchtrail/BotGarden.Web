@@ -46,6 +46,9 @@ builder.Services.AddControllers(options =>
     }
 });
 
+// Add HealthChecks
+builder.Services.AddHealthChecks();
+
 // Setup Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -187,7 +190,12 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowSpecificOrigin", policyBuilder =>
     {
         policyBuilder
-           .WithOrigins("http://localhost:5173") // Your client URL
+           .WithOrigins(
+               "http://localhost:5173",
+               "http://localhost:80",
+               "http://localhost:8080",
+               "http://localhost"
+           )
            .AllowAnyMethod()
            .AllowAnyHeader()
            .AllowCredentials();
@@ -197,7 +205,12 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowStaticFiles", policyBuilder =>
     {
         policyBuilder
-           .WithOrigins("http://localhost:5173")
+           .WithOrigins(
+               "http://localhost:5173",
+               "http://localhost:80",
+               "http://localhost:8080",
+               "http://localhost"
+           )
            .AllowAnyMethod()
            .AllowAnyHeader()
            .WithExposedHeaders("Content-Disposition")
@@ -218,6 +231,9 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
+// Map HealthChecks endpoint
+app.MapHealthChecks("/health");
+
 // Готовим папку Uploads
 var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "Uploads");
 if (!Directory.Exists(uploadsPath))
@@ -233,7 +249,7 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.Headers.Append(
-            "Access-Control-Allow-Origin", "http://localhost:5173");
+            "Access-Control-Allow-Origin", "*");
         ctx.Context.Response.Headers.Append(
             "Access-Control-Allow-Methods", "GET");
         ctx.Context.Response.Headers.Append(
@@ -251,7 +267,6 @@ using (var scope = app.Services.CreateScope())
     {
         var dbContext = services.GetRequiredService<BotanicGardenContext>();
         dbContext.Database.Migrate();
-        dbContext.EnsureDefaultUser();
     }
     catch (Exception ex)
     {
@@ -268,9 +283,6 @@ app.UseSwaggerUI(c =>
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "BotGarden API V1");
     c.DocumentTitle = "BotGarden API Documentation";
 });
-
-// Enable HTTPS redirection
-app.UseHttpsRedirection();
 
 // Enable CORS
 app.UseCors("AllowSpecificOrigin");

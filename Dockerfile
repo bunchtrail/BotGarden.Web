@@ -1,27 +1,57 @@
-# Шаг 1: Используем SDK образ для сборки с .NET 8.0
+# Build stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+
+# РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј СЂР°Р±РѕС‡СѓСЋ РґРёСЂРµРєС‚РѕСЂРёСЋ
 WORKDIR /src
 
-# Копируем файл проекта и добавляем локальный источник NuGet пакетов
+# РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј curl РґР»СЏ healthcheck
+RUN apt-get update && apt-get install -y curl
+
+# РљРѕРїРёСЂСѓРµРј РІСЃРµ .csproj С„Р°Р№Р»С‹ Рё РІРѕСЃСЃС‚Р°РЅР°РІР»РёРІР°РµРј Р·Р°РІРёСЃРёРјРѕСЃС‚Рё
 COPY ["BotGarden.Web/BotGarden.Web.csproj", "BotGarden.Web/"]
-COPY BotGarden.Web/nupkgs/ /src/nupkgs/
+COPY ["BotGarden.Web/nupkgs/", "BotGarden.Web/nupkgs/"]
 
-# Добавляем локальный источник NuGet
-RUN dotnet nuget add source /src/nupkgs --name LocalNuget
+# Р”РѕР±Р°РІР»СЏРµРј Р»РѕРєР°Р»СЊРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє NuGet РїР°РєРµС‚РѕРІ
+RUN dotnet nuget add source /src/BotGarden.Web/nupkgs --name LocalPackages
 
-# Восстанавливаем зависимости, включая локальные пакеты
+# Р’РѕСЃСЃС‚Р°РЅР°РІР»РёРІР°РµРј Р·Р°РІРёСЃРёРјРѕСЃС‚Рё
 RUN dotnet restore "BotGarden.Web/BotGarden.Web.csproj"
 
-# Копируем остальной код и собираем проект
-COPY BotGarden.Web/ BotGarden.Web/
+# РљРѕРїРёСЂСѓРµРј РІСЃРµ РѕСЃС‚Р°Р»СЊРЅС‹Рµ С„Р°Р№Р»С‹
+COPY . .
+
+# РЎРѕР±РёСЂР°РµРј РїСЂРёР»РѕР¶РµРЅРёРµ
 WORKDIR "/src/BotGarden.Web"
 RUN dotnet build "BotGarden.Web.csproj" -c Release -o /app/build
 
-# Шаг 2: Публикуем проект
+# РџСѓР±Р»РёРєСѓРµРј РїСЂРёР»РѕР¶РµРЅРёРµ
+FROM build AS publish
+ARG ASPNETCORE_ENVIRONMENT
+ENV ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
 RUN dotnet publish "BotGarden.Web.csproj" -c Release -o /app/publish
 
-# Шаг 3: Используем runtime образ с .NET 8.0
+# Final stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+
+# РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј curl РґР»СЏ healthcheck
+RUN apt-get update && apt-get install -y curl
+
 WORKDIR /app
-COPY --from=build /app/publish .
+
+# РЎРѕР·РґР°РµРј РґРёСЂРµРєС‚РѕСЂРёСЋ РґР»СЏ Р·Р°РіСЂСѓР·РѕРє Рё СѓСЃС‚Р°РЅР°РІР»РёРІР°РµРј РїСЂР°РІР°
+RUN mkdir -p /app/Uploads && \
+    chown -R $APP_UID:$APP_UID /app/Uploads
+
+# РљРѕРїРёСЂСѓРµРј РѕРїСѓР±Р»РёРєРѕРІР°РЅРЅРѕРµ РїСЂРёР»РѕР¶РµРЅРёРµ
+COPY --from=publish /app/publish .
+
+# РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј РїРµСЂРµРјРµРЅРЅС‹Рµ РѕРєСЂСѓР¶РµРЅРёСЏ
+ENV ASPNETCORE_URLS=http://+:80
+
+# Р”РѕР±Р°РІР»СЏРµРј healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:80/health || exit 1
+
+EXPOSE 80
+
 ENTRYPOINT ["dotnet", "BotGarden.Web.dll"]

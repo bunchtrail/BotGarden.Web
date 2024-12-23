@@ -51,12 +51,21 @@ namespace BotGardens.Web.Controllers
                 userRole = "User"
             };
 
+            // Добавляем пользователя в контекст
             _context.Users.Add(newUser);
+
+            // Генерируем токены до сохранения
+            var refreshTokenPlain = GenerateRefreshToken();
+            var refreshTokenHash = HashRefreshToken(refreshTokenPlain);
+            newUser.RefreshTokenHash = refreshTokenHash;
+            newUser.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+            // Сохраняем пользователя с уже заполненным RefreshTokenHash
             await _context.SaveChangesAsync();
 
-            var (accessToken, refreshTokenPlain) = await GenerateTokens(newUser);
+            // Генерируем JWT токен
+            var accessToken = GenerateJwtToken(newUser);
 
-            // Возвращаем плейн refresh-токен клиенту, он должен хранить его в защищенном месте (httpOnly cookie)
             return Ok(new
             {
                 Message = "Пользователь успешно зарегистрирован",
