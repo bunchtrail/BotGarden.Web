@@ -7,6 +7,6 @@ namespace BotGarden.Domain.Models.Forms.Dendrology
         public IEnumerable<PlantFamilies>? PlantFamilies { get; set; }
         public IEnumerable<BotGardenMode>? BotGardens { get; set; }
         public IEnumerable<Genus>? Genuses { get; set; }
-        public Plants Plants { get; set; }
+        public required ICollection<Plants> Plants { get; set; }
     }
 }
